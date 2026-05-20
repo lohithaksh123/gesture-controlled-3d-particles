@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture-Controlled 3D Particle System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        canvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: opacity 0.3s ease;
+        }
+        /* Custom Scrollbar for UI */
+        #ui-container::-webkit-scrollbar { width: 6px; }
+        #ui-container::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        #ui-container::-webkit-scrollbar-thumb { background: #4a4a8a; border-radius: 4px; }
+
+        #ui-container:hover { opacity: 1; }
+        h1 { font-size: 1.2rem; margin-top: 0; margin-bottom: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #a0a0ff; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+        .control-group:last-child { border-bottom: none; }
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #ccc; }
+        
+        /* Sliders */
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 5px;
+            accent-color: #a0a0ff;
+        }
+        .val-display { float: right; color: #00ffff; font-size: 0.8rem; }
+
+        /* Toggles */
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+            cursor: pointer;
+            margin-bottom: 6px;
+            color: #ccc;
+        }
+        .toggle-label input { margin-right: 8px; cursor: pointer; accent-color: #a0a0ff; }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+            font-size: 0.85rem;
+        }
+        button:hover { background: rgba(255, 255, 255, 0.2); transform: translateX(2px); }
+        button.active { background: #4a4a8a; border-color: #6a6aaa; font-weight: bold; }
+        input[type="color"] {
+            width: 100%;
+            height: 35px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: transparent;
+        }
+        
+        #status-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 250px;
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        #status-panel h2 { margin: 0 0 10px 0; font-size: 1rem; color: #a0a0ff; }
+        .stat-line { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px; color: #ccc; }
+        .stat-val { color: #00ffff; font-family: monospace; }
+        .mode-indicator { font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 1px; font-size: 0.9rem; margin-bottom: 8px; }
+        
+        #video-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 160px;
+            height: 120px;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 5;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+            background: #000;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        #video-container:hover { opacity: 1; }
+        #input_video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.5rem;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+
+        /* Glow Effect for two-hand mode indicator */
+        @keyframes pulse {
+            0% { text-shadow: 0 0 5px #00ffff; }
+            50% { text-shadow: 0 0 20px #00ffff; }
+            100% { text-shadow: 0 0 5px #00ffff; }
+        }
+        .two-hand-active {
+            color: #00ffff !important;
+            animation: pulse 2s infinite;
+        }
+    </style>
+
+    <!-- MediaPipe Hands CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="loading" class="loading">Initializing System...<br><span style="font-size: 1rem; color: #aaa;">Please allow camera access</span></div>
+    
+    <div id="ui-container">
+        <h1>Particle Controls</h1>
+        
+        <div class="control-group">
+            <label>Shape Template</label>
+            <button class="template-btn active" data-shape="sphere">Sphere (Default)</button>
+            <button class="template-btn" data-shape="heart">Heart</button>
+            <button class="template-btn" data-shape="flower">Flower</button>
+            <button class="template-btn" data-shape="saturn">Saturn</button>
+            <button class="template-btn" data-shape="buddha">Buddha</button>
+            <button class="template-btn" data-shape="fireworks">Fireworks</button>
+        </div>
+
+        <div class="control-group">
+            <label>Particle Color</label>
+            <input type="color" id="color-picker" value="#00ffff">
+        </div>
+
+        <div class="control-group">
+            <label>Settings</label>
+            
+            <label class="toggle-label">
+                <input type="checkbox" id="toggle-two-hand" checked> Enable Two-Hand Control
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" id="toggle-one-hand" checked> Enable One-Hand Mode
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" id="toggle-auto-rotate" checked> Enable Auto Rotate
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" id="toggle-lock-pos"> Lock Object Position
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" id="toggle-show-camera" checked> Show Camera Preview
+            </label>
+            
+            <div style="margin-top: 10px;">
+                <label>Rotation Sensitivity <span id="val-rot" class="val-display">1.0</span></label>
+                <input type="range" id="slider-rot" min="0.1" max="3" step="0.1" value="1.0">
+                
+                <label>Expansion Sensitivity <span id="val-exp" class="val-display">1.0</span></label>
+                <input type="range" id="slider-exp" min="0.1" max="3" step="0.1" value="1.0">
+                
+                <label>Gesture Smoothness <span id="val-smooth" class="val-display">0.08</span></label>
+                <input type="range" id="slider-smooth" min="0.01" max="0.2" step="0.01" value="0.08">
+                
+                <label>Particle Size <span id="val-size" class="val-display">0.05</span></label>
+                <input type="range" id="slider-size" min="0.01" max="0.2" step="0.01" value="0.05">
+                
+                <label>Auto Rotate Speed <span id="val-speed" class="val-display">0.5</span></label>
+                <input type="range" id="slider-speed" min="0" max="2" step="0.1" value="0.5">
+            </div>
+        </div>
+    </div>
+
+    <div id="status-panel">
+        <div id="mode-text" class="mode-indicator">SYSTEM IDLE</div>
+        <div class="stat-line"><span>Gesture:</span> <span id="stat-gesture" class="stat-val">None</span></div>
+        <div class="stat-line"><span>Hands Detected:</span> <span id="stat-hands" class="stat-val">0</span></div>
+        <div class="stat-line"><span>Distance (Zoom):</span> <span id="stat-dist" class="stat-val">0.00</span></div>
+        <div class="stat-line"><span>Rotation Angle:</span> <span id="stat-angle" class="stat-val">0°</span></div>
+    </div>
+
+    <div id="video-container">
+        <video id="input_video" autoplay playsinline muted></video>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration ---
+        const PARTICLE_COUNT = 8000;
+        let currentShape = 'sphere';
+        let targetColor = new THREE.Color(0x00ffff);
+        
+        // --- Settings ---
+        const settings = {
+            rotationSensitivity: 1.0,
+            expansionSensitivity: 1.0,
+            gestureSmoothness: 0.08,
+            particleSize: 0.05,
+            autoRotateSpeed: 0.5,
+            enableTwoHand: true,
+            enableOneHand: true,
+            enableAutoRotate: true,
+            lockPosition: false,
+            showCamera: true
+        };
+
+        // --- State ---
+        let time = 0;
+        let activeHandsCount = 0;
+        
+        // One Hand
+        let handTension = 0.5; // 0.0 to 1.0 (closed to open)
+        
+        // Two Hand
+        let twoHandCenter = { x: 0.5, y: 0.5 };
+        let twoHandDistance = 0.2;
+        let twoHandAngle = 0;
+
+        // Target vs Current for Smooth Interpolation
+        const targetRotation = new THREE.Vector3(0, 0, 0);
+        const currentRotation = new THREE.Vector3(0, 0, 0);
+        let targetScale = 1.0;
+        let currentScale = 1.0;
+        let targetGlow = 0.8;
+        let currentGlow = 0.8;
+
+        // Deadzones to prevent jitter
+        const ROTATION_DEADZONE = 0.02;
+        const ZOOM_DEADZONE = 0.01;
+
+        // --- DOM Elements ---
+        const uiModeText = document.getElementById('mode-text');
+        const uiStatGesture = document.getElementById('stat-gesture');
+        const uiStatHands = document.getElementById('stat-hands');
+        const uiStatDist = document.getElementById('stat-dist');
+        const uiStatAngle = document.getElementById('stat-angle');
+
+        // Setup UI Listeners
+        const bindSlider = (id, settingKey) => {
+            const el = document.getElementById('slider-' + id);
+            const valEl = document.getElementById('val-' + id);
+            el.addEventListener('input', (e) => {
+                settings[settingKey] = parseFloat(e.target.value);
+                valEl.innerText = settings[settingKey].toFixed(id === 'smooth' || id === 'size' ? 2 : 1);
+            });
+        };
+        bindSlider('rot', 'rotationSensitivity');
+        bindSlider('exp', 'expansionSensitivity');
+        bindSlider('smooth', 'gestureSmoothness');
+        bindSlider('size', 'particleSize');
+        bindSlider('speed', 'autoRotateSpeed');
+
+        const bindToggle = (id, settingKey, callback) => {
+            document.getElementById('toggle-' + id).addEventListener('change', (e) => {
+                settings[settingKey] = e.target.checked;
+                if (callback) callback(e.target.checked);
+            });
+        };
+        bindToggle('two-hand', 'enableTwoHand');
+        bindToggle('one-hand', 'enableOneHand');
+        bindToggle('auto-rotate', 'enableAutoRotate');
+        bindToggle('lock-pos', 'lockPosition');
+        bindToggle('show-camera', 'showCamera', (isVisible) => {
+            document.getElementById('video-container').style.display = isVisible ? 'block' : 'none';
+        });
+
+        // --- Math Helpers ---
+        const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
+
+        function getDistanceBetweenHands(h1, h2) {
+            const dx = h1[0].x - h2[0].x;
+            const dy = h1[0].y - h2[0].y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getAngleBetweenHands(h1, h2) {
+            const dx = h2[0].x - h1[0].x;
+            const dy = h2[0].y - h1[0].y;
+            return Math.atan2(dy, dx);
+        }
+
+        function getHandCenter(h1, h2) {
+            return {
+                x: (h1[0].x + h2[0].x) / 2,
+                y: (h1[0].y + h2[0].y) / 2
+            };
+        }
+
+        function getHandTension(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const d = Math.sqrt(Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2));
+            const minD = 0.05; 
+            const maxD = 0.25;
+            return Math.max(0, Math.min(1, (d - minD) / (maxD - minD)));
+        }
+
+        // --- Three.js Setup ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 8;
+        camera.position.y = 2;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enableRotate = false; // Disable mouse rotation so it doesn't conflict with hands
+
+        // --- Particle System ---
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+        
+        for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+            positions[i] = (Math.random() - 0.5) * 10;
+            targetPositions[i] = positions[i];
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const material = new THREE.PointsMaterial({
+            color: targetColor,
+            size: settings.particleSize,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const particles = new THREE.Points(geometry, material);
+        
+        // Wrap particles in a group for rotation mapping
+        const particleGroup = new THREE.Group();
+        particleGroup.add(particles);
+        scene.add(particleGroup);
+
+        // --- Shape Generators ---
+        const shapes = {
+            sphere: () => {
+                const arr = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const r = 3 * Math.cbrt(Math.random());
+                    const theta = Math.random() * 2 * Math.PI;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    arr.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+                }
+                return arr;
+            },
+            heart: () => {
+                const arr = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    let t = Math.random() * Math.PI * 2;
+                    let r = Math.sqrt(Math.random()); 
+                    let x = 16 * Math.pow(Math.sin(t), 3);
+                    let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                    let z = (Math.random() - 0.5) * 4;
+                    const scale = 0.15;
+                    arr.push(x * scale * r, y * scale * r, z * r);
+                }
+                return arr;
+            },
+            flower: () => {
+                const arr = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const u = Math.random() * Math.PI * 2;
+                    const v = Math.random() * Math.PI;
+                    const r = 2 + Math.cos(5 * u) * Math.sin(v); 
+                    const noise = (Math.random() - 0.5) * 0.5;
+                    arr.push((r + noise) * Math.cos(u) * Math.sin(v), (r + noise) * Math.sin(u) * Math.sin(v), (r + noise) * Math.cos(v));
+                }
+                return arr;
+            },
+            saturn: () => {
+                const arr = [];
+                const sphereCount = Math.floor(PARTICLE_COUNT * 0.4);
+                const ringCount = PARTICLE_COUNT - sphereCount;
+                for (let i = 0; i < sphereCount; i++) {
+                    const r = 1.5;
+                    const theta = Math.random() * 2 * Math.PI;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    arr.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+                }
+                for (let i = 0; i < ringCount; i++) {
+                    const r = 2.5 + Math.random() * 1.5;
+                    const theta = Math.random() * 2 * Math.PI;
+                    const y = (Math.random() - 0.5) * 0.1;
+                    arr.push(r * Math.cos(theta), y, r * Math.sin(theta));
+                }
+                return arr;
+            },
+            buddha: () => {
+                const arr = [];
+                const addSphere = (cx, cy, cz, radius, count) => {
+                    for(let i=0; i<count; i++){
+                        const theta = Math.random() * 2 * Math.PI;
+                        const phi = Math.acos(2 * Math.random() - 1);
+                        arr.push(cx + radius * Math.sin(phi) * Math.cos(theta), cy + radius * Math.sin(phi) * Math.sin(theta), cz + radius * Math.cos(phi));
+                    }
+                };
+                addSphere(0, 1.5, 0, 0.6, PARTICLE_COUNT * 0.15);
+                addSphere(0, 0, 0, 1.1, PARTICLE_COUNT * 0.35);
+                for(let i=0; i < PARTICLE_COUNT * 0.25; i++) {
+                    arr.push(-0.8 + (Math.random()-0.5), -1.0 + (Math.random()-0.5)*0.5, 0.5 + (Math.random()-0.5)*0.5);
+                }
+                for(let i=0; i < PARTICLE_COUNT * 0.25; i++) {
+                    arr.push(0.8 + (Math.random()-0.5), -1.0 + (Math.random()-0.5)*0.5, 0.5 + (Math.random()-0.5)*0.5);
+                }
+                return arr;
+            },
+            fireworks: () => {
+                const arr = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const theta = Math.random() * 2 * Math.PI;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    const r = Math.pow(Math.random(), 0.5) * 4; 
+                    arr.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+                }
+                return arr;
+            }
+        };
+
+        function updateShape(shapeName) {
+            currentShape = shapeName;
+            if (!shapes[shapeName]) return;
+            const newPositions = shapes[shapeName]();
+            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+                targetPositions[i] = newPositions[i] !== undefined ? newPositions[i] : 0;
+            }
+        }
+
+        updateShape('sphere');
+
+        const buttons = document.querySelectorAll('.template-btn');
+        buttons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                buttons.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                updateShape(e.target.getAttribute('data-shape'));
+            });
+        });
+
+        const colorPicker = document.getElementById('color-picker');
+        colorPicker.addEventListener('input', (e) => {
+            targetColor.set(e.target.value);
+            material.color.set(targetColor);
+        });
+
+        // --- MediaPipe Hands ---
+        const videoElement = document.getElementById('input_video');
+        const loadingElement = document.getElementById('loading');
+
+        function onResults(results) {
+            loadingElement.style.opacity = '0';
+            
+            activeHandsCount = 0;
+            if (results.multiHandLandmarks) {
+                activeHandsCount = results.multiHandLandmarks.length;
+            }
+
+            uiStatHands.innerText = activeHandsCount;
+
+            if (activeHandsCount === 2 && settings.enableTwoHand) {
+                // TWO-HAND MODE (Iron-Man Style)
+                uiModeText.innerText = "TWO-HAND CONTROL ACTIVE";
+                uiModeText.className = "mode-indicator two-hand-active";
+                uiStatGesture.innerText = "Iron-Man Sync";
+
+                // Sort hands by X coordinate so left hand is always h1
+                const handsSorted = [...results.multiHandLandmarks].sort((a, b) => a[0].x - b[0].x);
+                const h1 = handsSorted[0]; // Left-most hand
+                const h2 = handsSorted[1]; // Right-most hand
+
+                // 1. Calculate Center for Rotation X and Y
+                const center = getHandCenter(h1, h2);
+                
+                // Camera is mirrored, so we need to account for it visually
+                // X center from 0 to 1
+                const mappedRotY = (center.x - 0.5) * Math.PI * 2 * settings.rotationSensitivity;
+                const mappedRotX = (center.y - 0.5) * Math.PI * 2 * settings.rotationSensitivity;
+                
+                if (!settings.lockPosition) {
+                    if (Math.abs(mappedRotX - targetRotation.x) > ROTATION_DEADZONE) targetRotation.x = mappedRotX;
+                    if (Math.abs(mappedRotY - targetRotation.y) > ROTATION_DEADZONE) targetRotation.y = mappedRotY;
+                }
+
+                // 2. Calculate Distance for Zoom / Scale
+                const dist = getDistanceBetweenHands(h1, h2);
+                // dist is roughly 0.1 to 0.8. Map to scale 0.5 to 3.0
+                const mappedScale = 0.5 + (dist * 4 * settings.expansionSensitivity);
+                if (Math.abs(mappedScale - targetScale) > ZOOM_DEADZONE) targetScale = mappedScale;
+
+                // 3. Calculate Angle for Rotation Z
+                const angle = getAngleBetweenHands(h1, h2);
+                targetRotation.z = angle * settings.rotationSensitivity;
+
+                // Update UI Stats
+                uiStatDist.innerText = dist.toFixed(2);
+                uiStatAngle.innerText = (angle * 180 / Math.PI).toFixed(0) + '°';
+                
+                // Extra Glow
+                targetGlow = 1.0;
+
+            } else if (activeHandsCount === 1 && settings.enableOneHand) {
+                // ONE-HAND MODE
+                uiModeText.innerText = "ONE-HAND CONTROL";
+                uiModeText.className = "mode-indicator";
+                
+                const landmarks = results.multiHandLandmarks[0];
+                const tension = getHandTension(landmarks);
+                
+                // Smooth tension update
+                handTension += (tension - handTension) * settings.gestureSmoothness;
+                
+                uiStatGesture.innerText = tension > 0.6 ? "Open Palm (Expand)" : tension < 0.2 ? "Fist (Contract)" : "Neutral";
+                uiStatDist.innerText = "N/A";
+                uiStatAngle.innerText = "N/A";
+
+                // Map to Scale
+                targetScale = 0.5 + (handTension * 1.5 * settings.expansionSensitivity);
+                
+                // Center Rotation Neutral
+                targetRotation.x = 0;
+                targetRotation.z = 0;
+                
+                // Glow based on tension
+                targetGlow = 0.6 + (tension * 0.4);
+
+            } else {
+                // IDLE MODE
+                uiModeText.innerText = "SYSTEM IDLE";
+                uiModeText.className = "mode-indicator";
+                uiStatGesture.innerText = "Auto Rotating";
+                uiStatDist.innerText = "0.00";
+                uiStatAngle.innerText = "0°";
+
+                // Return to normal scale
+                targetScale = 1.0;
+                targetGlow = 0.8;
+                
+                // Neutral rotation X and Z
+                targetRotation.x = 0;
+                targetRotation.z = 0;
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 2, // UPGRADED TO 2
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        cameraUtils.start().catch(err => {
+            console.error("Camera Init Error:", err);
+            loadingElement.innerHTML = "Camera Error.<br>Please ensure you have a webcam and gave permissions.";
+        });
+
+        // --- Animation Loop ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+            time += delta;
+
+            // 1. Particle Morphing
+            const posAttribute = geometry.attributes.position;
+            const currentPositions = posAttribute.array;
+            const speed = 3.0 * delta;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const idx = i * 3;
+                currentPositions[idx] += (targetPositions[idx] - currentPositions[idx]) * speed;
+                currentPositions[idx + 1] += (targetPositions[idx + 1] - currentPositions[idx + 1]) * speed;
+                currentPositions[idx + 2] += (targetPositions[idx + 2] - currentPositions[idx + 2]) * speed;
+
+                if (currentShape === 'fireworks') {
+                    currentPositions[idx] += (Math.random() - 0.5) * 0.02;
+                    currentPositions[idx+1] += (Math.random() - 0.5) * 0.02;
+                    currentPositions[idx+2] += (Math.random() - 0.5) * 0.02;
+                }
+            }
+            posAttribute.needsUpdate = true;
+
+            // 2. Smooth Interpolation for Hand Controls (Lerp)
+            currentScale = lerp(currentScale, targetScale, settings.gestureSmoothness);
+            currentRotation.x = lerp(currentRotation.x, targetRotation.x, settings.gestureSmoothness);
+            
+            // For Y, we either lerp to target OR auto-rotate
+            if (activeHandsCount === 2 && settings.enableTwoHand && !settings.lockPosition) {
+                // Lerp to hand center mapped rotation
+                currentRotation.y = lerp(currentRotation.y, targetRotation.y, settings.gestureSmoothness);
+            } else if (settings.enableAutoRotate) {
+                // Auto rotate continuously
+                currentRotation.y += delta * settings.autoRotateSpeed;
+            } else if (activeHandsCount === 0 || activeHandsCount === 1) {
+                // Smoothly return to 0 if lock is off and auto rotate is off
+                if (!settings.enableAutoRotate && !settings.lockPosition) {
+                    currentRotation.y = lerp(currentRotation.y, 0, settings.gestureSmoothness);
+                }
+            }
+
+            currentRotation.z = lerp(currentRotation.z, targetRotation.z, settings.gestureSmoothness);
+            currentGlow = lerp(currentGlow, targetGlow, settings.gestureSmoothness);
+
+            // Apply to group
+            const breathing = Math.sin(time) * 0.05;
+            particleGroup.scale.setScalar(currentScale + breathing);
+            particleGroup.rotation.set(currentRotation.x, currentRotation.y, currentRotation.z);
+            
+            // Apply dynamic settings
+            material.size = settings.particleSize;
+            material.opacity = currentGlow;
+
+            controls.update(); 
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
