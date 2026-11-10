@@ -39,8 +39,8 @@ flowchart LR
 ## Run locally
 
 ```bash
-git clone https://github.com/lohithaksh123/handmovement.git
-cd handmovement
+git clone https://github.com/lohithaksh123/gesture-controlled-3d-particles.git
+cd gesture-controlled-3d-particles
 npm install
 npm run dev
 ```
